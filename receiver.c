@@ -7,9 +7,18 @@
 #include <strings.h>
 #include <string.h>
 
-#define SERVER_PORT 5888
 #define MAX_LINE 256
+#define NUM_ARGS 5
 
+int debug = 1; 
+
+int rport;					//port requester waits on
+int sport 	= 5888;			//server port to request from 
+char* file_option;			//name of file being requested
+
+char* host 	= "localhost";
+
+//prints error message and dies
 int
 die(char* err_msg)
 {
@@ -17,27 +26,53 @@ die(char* err_msg)
 	exit(1);
 }
 
+//checks for correct number of arguments and assigns them  
+//respectively to port and file_option returns -1 if wrong number of args
+int 
+parse_args(int argc, char * argv[])
+{
+	if(argc != 5)
+		return -1;
+
+	int i;
+	for(i = 0; i < argc; i++)
+	{
+		if(strcmp(argv[i], "-p") == 0)
+			rport = atoi(argv[i+1]);
+
+		else if(strcmp(argv[i], "-o") == 0)
+			file_option = strdup(argv[i + 1]);
+	}
+	return 0;
+}
+
+int
+make_packet(char type, int seq, char* payload, int len)
+{
+	int header_size = sizeof(char) + 2 * sizeof(int);
+	char packet[header_size + len];
+
+	return 0;
+}
+
 int
 main(int argc, char* argv[])
 {
-	//FILE* fp;
+	char* host = "localhost";
+
 	struct hostent* hp;
 	struct sockaddr_in sin;
-	char* host;
 	char buf[MAX_LINE];
 	
 	int s;
 	int len;
 
-	if(argc == 2)
-	{
-		host = argv[1];
-	}
-
-	else
+	if(parse_args(argc, argv) < 0)
 	{
 		die("Usage: receiver host");
 	}
+
+	if(debug) printf("Listening on port: %d, Requesting file: %s", rport, file_option);
 
 	//translate host to peer IP
 	hp = gethostbyname(host);
