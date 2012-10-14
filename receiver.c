@@ -51,15 +51,74 @@ parse_args(int argc, char * argv[])
 int
 read_packet(packet_t* packet)
 {
+	printf("Received packet:\n");
 	header_t h 					= packet->header;
 	char payload[h.len];
 	memcpy(payload, packet->payload, h.len);
 
-	printf("type: %d\n sequence: %d\n length: %d\n payload: %s\n", h.type, h.seq, h.len, payload);
+	printf(" type: %d\n sequence: %d\n length: %d\n payload: %s\n\n", h.type, h.seq, h.len, payload);
 	
 	return 0;
 }
 
+int
+make_packet(packet_t* p, char type, int seq, int len, char* payload)
+{
+	//make header
+	header_t h;
+	h.type = type;
+	h.seq = seq;
+	h.len = len;
+
+	//make packet
+	p->header = h;
+	strcpy((char*) p->payload, payload);
+
+	return 0;
+}
+
+//appends payload to file. returns number of bytes written
+int
+write_file(packet_t* p, FILE* fp)
+{
+	header_t h 	= p->header;
+	int len 	= h.len;
+	char payload [len];
+	memcpy(payload, p->payload, len);
+
+	int written;
+	if((written = fwrite(payload, len, sizeof(char), fp)) < 0)
+	{
+		die("Error: Fail to write to file");
+	}
+	return written;
+}
+
+FILE*
+make_file(char* filename)
+{
+	FILE* fp;
+
+	if((fp = fopen (filename, "w+")) == NULL)
+	{
+		die("Error: Fail to open file");
+	}
+
+	return fp;
+}
+
+//returns 1 if p is an END packet, return 0 otherwise
+int
+is_end_packet(packet_t* p)
+{
+	header_t h = p->header;
+	if(h.type == 'E')
+	{
+		return 1;
+	}
+
+	return 0;
+}
 
 int
 main(int argc, char* argv[])
@@ -73,7 +132,7 @@ main(int argc, char* argv[])
 
 	if(parse_args(argc, argv) < 0)
 	{
-		die("Usage: receiver host");
+		die("Usage: -p <receiver port> -o <host>\n");
 	}
 
 	if(debug) printf("Listening on port: %d, Requesting file: %s\n", rport, file_option);
@@ -86,22 +145,17 @@ main(int argc, char* argv[])
 		die("Error: Unknown Host\n");
 	}
 
-	//payload
-	char* msg = "hello world.";
+	//assemble packet
+	packet_t p;
+
+	int seq 	= 1;
+	int len 	= strlen(file_option) + 1;
+	char type 	= 'R';
 	char payload [MAX_PAYLOAD];
 
-	//make header
-	header_t h;
-	h.type = 'R';
-	h.seq = 1;
-	h.len = strlen(msg) + 1;
+	memcpy(payload, file_option, len);
 
-	memcpy(payload, msg, h.len);
-
-	//make packet
-	packet_t p;
-	p.header = h;
-	strcpy((char*) p.payload, payload);
+	make_packet(&p, type, seq, len, payload);
 
 	//read packet
 	read_packet(&p);
@@ -123,16 +177,40 @@ main(int argc, char* argv[])
 		die("Error: Fail to send packet\n");
 	}
 
+	//set up for response
 	packet_t resp;
-
 	int recv_len;
 	socklen_t addr_len = sizeof(sin);
 
-	//wait for response
-	if((recv_len = recvfrom(s, &resp, sizeof(resp), 0, (struct sockaddr*) &sin, &addr_len)) < 0)
+	//ready file to stuff payload into
+	FILE* fp = make_file("myFile");
+	printf("Successfully created file %s\n", file_option);
+
+	int end = 0;
+	while(end == 0)
 	{
-		die("Error: Fail to receive server response");
+		//wait for response
+		if((recv_len = recvfrom(s, &resp, sizeof(resp), 0, (struct sockaddr*) &sin, &addr_len)) < 0)
+		{
+			die("Error: Fail to receive server response");
+		}
+
+		printf("received %d bytes\n", recv_len);
+
+		read_packet(&resp);
+
+		//check if end packet
+		end = is_end_packet(&resp);
+
+		//if havent ended, append payload to file
+		if(end == 0)
+		{
+			int bytes_written = write_file(&resp, fp);
+			printf("Wrote %d bytes\n", bytes_written);
+		}
 	}
 
+	printf("End packet received.\n");
+	fclose(fp);
 	exit(0);
 }
