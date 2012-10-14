@@ -1,2 +1,2 @@
-test.txt 1 localhost 6000
-test.txt 1 localhost 6000
+./files/test.txt 1 localhost 6000
+./files/iliad.txt 1 localhost 6000
