@@ -2,6 +2,8 @@ CC = gcc
 CFLAGS = -Wall -Werror
 
 all: receiver server
+	cp server ./files/server1
+	cp server ./files/server2
 
 receiver: receiver.o
 	$(CC)  receiver.o -o receiver

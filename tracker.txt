@@ -1,2 +1,1 @@
-./files/test.txt 1 localhost 6000
 ./files/iliad.txt 1 localhost 6000

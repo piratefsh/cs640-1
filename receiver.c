@@ -76,9 +76,13 @@ read_tracker(char* filename, request_t* requests)
 		strcpy(r.host, strtok(NULL, " "));
 		r.port		= atoi(strtok(NULL, " "));
 
-		memcpy(requests + n, &r, sizeof(request_t));
-		if(debug) printf("%s %d %s %d\n", r.filename, r.id, r.host, r.port);
-		n++;
+		//if request in tracker is for the file we're requesting
+		if(strcmp(r.filename, file_option) == 0)
+		{
+			memcpy(requests + n, &r, sizeof(request_t));
+			if(debug) printf("%s %d %s %d\n", r.filename, r.id, r.host, r.port);
+			n++;
+		}
 	}
 
 	return n;
@@ -157,7 +161,7 @@ is_end_packet(packet_t* p)
 }
 
 int 
-do_request(request_t* r)
+do_request(request_t* r, FILE* fp)
 {
 	struct hostent* hp;
 	struct sockaddr_in server, recv;
@@ -216,11 +220,6 @@ do_request(request_t* r)
 	int recv_len;
 	socklen_t addr_len = sizeof(server);
 
-	//ready file to stuff payload into
-	char* filename = strcat(r->filename, "_receiver");
-	FILE* fp = make_file(filename);
-	printf("Successfully created file %s\n", filename);
-
 	int end = 0;
 	while(end == 0)
 	{
@@ -271,10 +270,21 @@ main(int argc, char* argv[])
 
 	if(debug) printf("Number of requests in tracker: %d\n", num_requests);
 
+	if(num_requests == 0)
+	{
+		die("Error: No entries in tracker file\n");
+	}
+
+	//ready file to stuff payload into
+	char* original_filename = strdup(requests[0].filename);
+	char* filename = strcat(original_filename, "_receiver");
+	FILE* fp = make_file(filename);
+	printf("Successfully created file %s\n", filename);
+
 	int i;
 	for(i = 0; i < num_requests; i++)
 	{
-		do_request(&(requests[i]));
+		do_request(&(requests[i]), fp);
 	}
 	
 	
