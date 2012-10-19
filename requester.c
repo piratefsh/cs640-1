@@ -298,9 +298,11 @@ do_request(request_t* r, FILE* fp)
 	//done receiving
 	if(debug) printf("End packet received.\n");
 
-	time_t time_diff	= (end_time.tv_sec * 1000000 + end_time.tv_usec) - (start_time.tv_sec * 1000000 + start_time.tv_usec) ;
+	time_t time_diff	= (end_time.tv_sec * 1000000 + end_time.tv_usec) - (start_time.tv_sec * 1000000 + start_time.tv_usec);
+
 	printf("--------------------------------------------\n");
-	printf("\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %lds\nAverage packets/s: %.4f\n\n", num_packets, bytes_received, time_diff, num_packets / (float)(time_diff/1000000.0f));
+	printf("\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %lds\nAverage packets/s: %.4f\n\n", num_packets, 
+		bytes_received, time_diff, num_packets / (float)(time_diff/1000000.0f));
 	printf("--------------------------------------------\n");
 	
 	//close socket

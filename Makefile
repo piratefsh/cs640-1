@@ -1,21 +1,19 @@
 CC = gcc
 CFLAGS = -Wall -Werror
 
-all: receiver server
-	cp server ./files/server1
-	cp server ./files/server2
+all: requester sender
 
-receiver: receiver.o
-	$(CC)  receiver.o -o receiver
+requester: requester.o
+	$(CC)  requester.o -o requester
 
-receiver.o:
-	$(CC) $(CFLAGS) -c receiver.c
+requester.o:
+	$(CC) $(CFLAGS) -c requester.c
 
-server: server.o
-	$(CC) server.o -o server
+sender: sender.o
+	$(CC) sender.o -o sender
 
-server.o:
-	$(CC) $(CFLAGS) -c server.c
+sender.o:
+	$(CC) $(CFLAGS) -c sender.c
 
 clean:
 	rm -rf *.o
