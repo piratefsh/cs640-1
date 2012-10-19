@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/time.h>
+#include <arpa/inet.h>
 
 #define MAX_LINE 512
 #define NUM_ARGS 5
@@ -121,7 +122,7 @@ make_packet(packet_t* p, char type, int seq, int len, char* payload)
 	return 0;
 }
 
-//appends payload to file. returns number of bytes written
+//appends payload to file
 int
 write_file(packet_t* p, FILE* fp)
 {
@@ -135,7 +136,7 @@ write_file(packet_t* p, FILE* fp)
 	{
 		die("Error: Fail to write to file");
 	}
-	return written;
+	return 0;
 }
 
 FILE*
@@ -164,6 +165,24 @@ is_end_packet(packet_t* p)
 	return 0;
 }
 
+void
+print_packet_data(struct tm* local_time, int ms, packet_t* resp, char* server_ip)
+{
+		//print info about packet
+		// The time at which the packet was received in millisecond granularity,
+		// Sender's IP address (in decimal-dot notation),
+		// The packet sequence number,
+		// The payload's length (in bytes), and
+		// the first 4 bytes of the payload.
+
+	char payload_4B[5];
+	memcpy(payload_4B, resp->payload, 4);
+	payload_4B[4] = '\0';
+	printf("Time: %d-%d-%d %d:%d:%d.%d\n",local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, 
+		local_time->tm_hour, local_time->tm_min, local_time->tm_sec, ms);
+	printf("Sender: %s\nSequence #: %d\nPayload: %s\n\n", server_ip, (resp->header).len, payload_4B);
+}
+
 int 
 do_request(request_t* r, FILE* fp)
 {
@@ -186,7 +205,7 @@ do_request(request_t* r, FILE* fp)
 	server.sin_port 	= htons(r->port);
 	bcopy(hp->h_addr, (char*) &server.sin_addr, hp->h_length);
 
-	//build recevier address 
+	//build receiver address 
 	recv.sin_family = AF_INET;
 	recv.sin_port	= rport;
 	bcopy(hp->h_addr, (char*) &recv.sin_addr, hp->h_length);
@@ -228,7 +247,9 @@ do_request(request_t* r, FILE* fp)
 	int num_packets     = 0;
 	int bytes_received  = 0;
 	int first_packet    = 1;
-	struct timeval start_time, end_time;
+	struct timeval start_time, end_time, curr_time;
+	struct tm local_time;
+	time_t t;
 
 	int end = 0;
 	while(end == 0)
@@ -239,18 +260,20 @@ do_request(request_t* r, FILE* fp)
 			die("Error: Fail to receive server response");
 		}
 
+		gettimeofday(&curr_time, NULL);
+		t = time(NULL);
+		local_time = *localtime(&t);
+
 		//get start time from first packet
 		if(first_packet)
 		{
-			printf("get start time\n");
-			gettimeofday(&start_time, NULL);
+			memcpy(&start_time, &curr_time, sizeof(struct timeval));
 			first_packet = 0;
 		}
 
 		num_packets++;
 		bytes_received += (resp.header).len;
 
-		if(debug) read_packet(&resp);
 
 		//check if end packet
 		end = is_end_packet(&resp);
@@ -264,26 +287,23 @@ do_request(request_t* r, FILE* fp)
 		//if already ended, log time
 		else
 		{
-			printf("get end time\n");
 			gettimeofday(&end_time, NULL);
 		}
+
+		//print packet data
+		print_packet_data(&local_time, (int)(curr_time.tv_usec * 1000), &resp, inet_ntoa(server.sin_addr));
+
 	}
 
 	//done receiving
 	if(debug) printf("End packet received.\n");
 
 	time_t time_diff	= (end_time.tv_sec * 1000000 + end_time.tv_usec) - (start_time.tv_sec * 1000000 + start_time.tv_usec) ;
-	printf("\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %lds\nAverage packets/s: %.4f\n", num_packets, bytes_received, time_diff, num_packets / (float)time_diff);
+	printf("--------------------------------------------\n");
+	printf("\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %lds\nAverage packets/s: %.4f\n\n", num_packets, bytes_received, time_diff, num_packets / (float)(time_diff/1000000.0f));
+	printf("--------------------------------------------\n");
 	
-	// Total Data packets received,
-	// Total data bytes received (which should add up to the file part size),
-	// Average packets/second, and
-	// Duration of the test. This duration should start with the first data packet received 
-	// from that sender and end with the END packet from it.
-	// The requester also should write the chunks that it receives to a file with the same file name as it requested. 
-	// This log file will be compared with the actual file that was sent out.
 	//close socket
-
 	close(s);
 
 	return 0;

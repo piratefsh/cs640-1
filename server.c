@@ -1,3 +1,9 @@
+/*
+	sender.c
+	Authors: Tyler Burki (UWID: 9032705106) and Sher-Minn Chong (UWID: 9064830251)
+	Purpose: UDP file request server
+*/
+
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -19,12 +25,22 @@ int RATE;
 int SEQ_NUM;
 int LEN;
 
+/* Method: die
+   Purpose: Prints an error message and quits.
+   Parameters: s -- The message to print.
+*/
 void die(char* s)
 {
 	perror(s);
 	exit(1);
 }
 
+/*
+	Method: main
+	Purpose: Performs a passive open and waits for requests for a file.  When a file is requested, fragments the file
+			 into packets and sends them to the requester.
+	Returns: 0 if successful
+*/
 int main(int argc, char* argv[])
 {
 	int i;
@@ -159,10 +175,10 @@ int main(int argc, char* argv[])
 	int seq = SEQ_NUM;
 	
 	/* Set up the send rate */
-	long waitTime = (long)((1/RATE) * 1000);
+	double waitTime = (1000/(double)RATE);
 	struct timespec sleep_spec, rem_spec;
 	sleep_spec.tv_sec = 0;
-	sleep_spec.tv_nsec = waitTime;
+	sleep_spec.tv_nsec = (long)(waitTime * 1000000);
 	time_t t;
 	struct tm curTime;
 	struct timeval ms;
@@ -193,7 +209,7 @@ int main(int argc, char* argv[])
 		gettimeofday(&ms, NULL);
 		memcpy(dispPayload, payloadOut, 4);
 
-		printf("Time: %d-%d-%d %d:%d:%d.%d\n",curTime.tm_year + 1900, curTime.tm_mon + 1, curTime.tm_mday, curTime.tm_hour, curTime.tm_min, curTime.tm_sec, (int)(ms.tv_usec * 1000));
+		printf("Time: %d-%d-%d %d:%d:%d.%d\n",curTime.tm_year + 1900, curTime.tm_mon + 1, curTime.tm_mday, curTime.tm_hour, curTime.tm_min, curTime.tm_sec, (int)(ms.tv_usec * .001));
 		printf("Requester: %s\nSequence #: %d\nPayload: %s\n\n",inet_ntoa(sout.sin_addr), seq, dispPayload);
 		
 		/* Increase the sequence number and wait to send the next packet */
@@ -213,7 +229,7 @@ int main(int argc, char* argv[])
 		die("END sendto error");
 	}
 
-	printf("Sent endpacket\n");
+	printf("Sent end packet\n");
 	
 	close(sock_recv);
 	close(sock_send);
