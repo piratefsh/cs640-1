@@ -5,6 +5,8 @@ all: requester sender
 
 requester: requester.o
 	$(CC)  requester.o -o requester
+	cp sender ./files/server1
+	cp sender ./files/server2
 
 requester.o:
 	$(CC) $(CFLAGS) -c requester.c

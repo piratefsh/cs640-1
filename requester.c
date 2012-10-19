@@ -187,11 +187,13 @@ int
 do_request(request_t* r, FILE* fp)
 {
 	struct hostent* hp;
+	struct hostent* rhp;
 	struct sockaddr_in server, recv;
 	int s;
 
 	//translate host to peer IP
 	hp = gethostbyname(r->host);
+	rhp = gethostbyname("localhost");
 
 	if(debug) printf("Request:\n filename: %s host: %s port: %d id: %d\n", r->filename, r-> host, r->port, r->id );
 	if(!hp)
@@ -202,13 +204,13 @@ do_request(request_t* r, FILE* fp)
 	//build server address data structure
 	bzero((char*) &server, sizeof(server));
 	server.sin_family	= AF_INET;
-	server.sin_port 	= htons(r->port);
+	server.sin_port 	= htons(r->port); 
 	bcopy(hp->h_addr, (char*) &server.sin_addr, hp->h_length);
 
 	//build receiver address 
 	recv.sin_family = AF_INET;
 	recv.sin_port	= rport;
-	bcopy(hp->h_addr, (char*) &recv.sin_addr, hp->h_length);
+	bcopy(rhp->h_addr, (char*) &recv.sin_addr, rhp->h_length);
 
 
 	//active open
