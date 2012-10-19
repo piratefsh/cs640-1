@@ -8,13 +8,15 @@
 #include <string.h>
 #include "util.h"
 #include <unistd.h>
+#include <time.h>
+#include <sys/time.h>
 
 #define MAX_LINE 512
 #define NUM_ARGS 5
 #define MAX_TRACKER_LINES 10
 
 
-int debug = 1; 
+int debug = 0; 
 
 char* tracker_filename	= "tracker.txt";
 char* file_option;					//name of file being requested
@@ -96,7 +98,9 @@ read_packet(packet_t* packet)
 	char payload[h.len];
 	memcpy(payload, packet->payload, h.len);
 
-	printf(" type: %c\n sequence: %d\n length: %d\n payload: %s\n\n", h.type, h.seq, h.len, payload);
+	h.seq = ntohl(h.seq);
+
+	printf(" type: %c\n sequence: %d\n length: %d\n\n", h.type, h.seq, h.len);
 	
 	return 0;
 }
@@ -201,7 +205,7 @@ do_request(request_t* r, FILE* fp)
 	//assemble packet
 	packet_t p;
 
-	int seq 	= r->id;
+	int seq 	= 0;
 	int len 	= strlen(r->filename) + 1;
 	char type 	= 'R';
 	char payload [MAX_PAYLOAD];
@@ -220,6 +224,12 @@ do_request(request_t* r, FILE* fp)
 	int recv_len;
 	socklen_t addr_len = sizeof(server);
 
+	//number of packets received
+	int num_packets     = 0;
+	int bytes_received  = 0;
+	int first_packet    = 1;
+	struct timeval start_time, end_time;
+
 	int end = 0;
 	while(end == 0)
 	{
@@ -229,9 +239,18 @@ do_request(request_t* r, FILE* fp)
 			die("Error: Fail to receive server response");
 		}
 
-		printf("received %d bytes\n", recv_len);
+		//get start time from first packet
+		if(first_packet)
+		{
+			printf("get start time\n");
+			gettimeofday(&start_time, NULL);
+			first_packet = 0;
+		}
 
-		read_packet(&resp);
+		num_packets++;
+		bytes_received += (resp.header).len;
+
+		if(debug) read_packet(&resp);
 
 		//check if end packet
 		end = is_end_packet(&resp);
@@ -240,14 +259,31 @@ do_request(request_t* r, FILE* fp)
 		if(end == 0)
 		{
 			int bytes_written = write_file(&resp, fp);
-			printf("Wrote %d bytes\n", bytes_written);
+			if(debug) printf("Wrote %d bytes\n", bytes_written);
+		}
+		//if already ended, log time
+		else
+		{
+			printf("get end time\n");
+			gettimeofday(&end_time, NULL);
 		}
 	}
 
-	printf("End packet received.\n");
+	//done receiving
+	if(debug) printf("End packet received.\n");
 
-	//close file and socket
-	fclose(fp);
+	time_t time_diff	= (end_time.tv_sec * 1000000 + end_time.tv_usec) - (start_time.tv_sec * 1000000 + start_time.tv_usec) ;
+	printf("\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %lds\nAverage packets/s: %.4f\n", num_packets, bytes_received, time_diff, num_packets / (float)time_diff);
+	
+	// Total Data packets received,
+	// Total data bytes received (which should add up to the file part size),
+	// Average packets/second, and
+	// Duration of the test. This duration should start with the first data packet received 
+	// from that sender and end with the END packet from it.
+	// The requester also should write the chunks that it receives to a file with the same file name as it requested. 
+	// This log file will be compared with the actual file that was sent out.
+	//close socket
+
 	close(s);
 
 	return 0;
@@ -286,7 +322,10 @@ main(int argc, char* argv[])
 	{
 		do_request(&(requests[i]), fp);
 	}
+
 	
+	//done requesting from all servers
+	fclose(fp);
 	
 	exit(0);
 }

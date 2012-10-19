@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <time.h>
+#include <sys/time.h>
 #include "util.h"
 
 
@@ -65,6 +67,11 @@ int main(int argc, char* argv[])
 		else if (strcmp(argType, "-r") == 0)
 		{
 			RATE = arg;
+
+			if (RATE <= 0)
+			{
+				die("Please run again with a rate greater than 0.");
+			}
 		}
 		else if (strcmp(argType, "-q") == 0)
 		{
@@ -82,102 +89,133 @@ int main(int argc, char* argv[])
 		}
 	}
 	
-	/* Prepare socket */
-	struct sockaddr_in sin_me, sin_you;
+	struct sockaddr_in sin, sout;
 	char buf[LEN];
 	int recvLen;
-	unsigned int youLen = sizeof(sin_you);
-	int s;
+	unsigned int sendLen = sizeof(sout);
+	int sock_send, sock_recv;
 	
-	bzero((char *)&sin_me, sizeof(sin_me));
-	sin_me.sin_family = AF_INET;
-	sin_me.sin_addr.s_addr = htonl(INADDR_ANY);
-	sin_me.sin_port = htons(PORT);
+	/* Prepare sender socket */
+	bzero((char *)&sin, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = htonl(INADDR_ANY);
+	sin.sin_port = htons(PORT);
 
-	if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
+	if ((sock_send = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
 	{
 		die("socket error");
 	}
-
-	if ((bind(s, (struct sockaddr *)&sin_me, sizeof(sin_me))) < 0)
+	
+	if ((bind(sock_send, (struct sockaddr *)&sin, sizeof(sin))) < 0)
 	{
 		die("bind error");
 	}
 	
-	/* Initiate passive open */
-	while(1)
+	/* Prepare receiver socket */
+	bzero((char *)&sout, sizeof(sout));
+	sout.sin_family = AF_INET;
+	sout.sin_addr.s_addr = htonl(INADDR_ANY);
+	sout.sin_port = htons(REQUESTER_PORT);
+
+	if ((sock_recv = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
 	{
-		printf("%s\n", "Waiting for data...");
-		/* Wait to receive data */
-		if ((recvLen = recvfrom(s, buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&sin_you, &youLen)) < 0)
-		{
-			die("recvfrom error");
-		}
-		
-		packet_t* pin = (packet_t*)buf;
-		header_t hin = pin->header;
-		
-		/* Check if this is a request packet, if it's not, ignore and continue */
-		if (hin.type != 'R')
-		{
-			continue;
-		}
-		
-		/* Open the requested file for reading */
-		char* payloadIn = pin->payload;
-		FILE *fp;
-		fp = fopen(payloadIn, "r");
-		
-		if (fp == NULL)
-		{
-			printf("Cannot open file %s\n", payloadIn);
-			continue;
-		}
-		
-		packet_t pout;
-		header_t hout;
-		pout.header = hout;
-		char payloadOut[MAX_PAYLOAD];
-		
-		hout.type = 'D';
-		int seq= 1;
-		int bytesRead = 0;
-
-		/* Build and send the packets */
-		while(!feof(fp))
-		{
-			memset(&payloadOut[0], 0, sizeof(payloadOut));
-			bytesRead = fread(payloadOut, sizeof(char), MAX_PAYLOAD, fp);
-			hout.len = bytesRead;
-			hout.seq = seq;
-			memcpy(pout.payload, payloadOut, MAX_PAYLOAD);
-
-			pout.header = hout;
-			
-			/* Return file to requester in DATA packets */
-			if (sendto(s, &pout, sizeof(pout), 0, (struct sockaddr*)&sin_you, youLen) < 0)
-			{
-				die("DATA sendto error");
-			}
-			printf("Payload for packet %d: %s\nLength in bytes: %d\n\n-----------------------------------------------\n\n", seq, pout.payload, hout.len);
-			seq++;
-		}
-
-		/* Send the END packet */
-		hout.type = 'E';
-		hout.seq = 0;
-		hout.len = 0;
-		memset(&payloadOut[0], 0, sizeof(payloadOut));
-		pout.header = hout;
-
-		if (sendto(s, &pout, sizeof(pout), 0, (struct sockaddr*)&sin_you, youLen) < 0)
-		{
-			die("END sendto error");
-		}
-
-		printf("Sent endpacket\n");
+		die("socket error");
 	}
 	
-	close(s);
+	/* Initiate passive open */
+	printf("%s\n", "Waiting for data...");
+	/* Wait to receive data */
+	if ((recvLen = recvfrom(sock_send, buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&sout, &sendLen)) < 0)
+	{
+		die("recvfrom error");
+	}
+	
+	packet_t* pin = (packet_t*)buf;
+	header_t hin = pin->header;
+	
+	/* Check if this is a request packet, if it's not, ignore and continue */
+	if (hin.type != 'R')
+	{
+		die("Invalid packet type");
+	}
+	
+	/* Open the requested file for reading */
+	char* payloadIn = pin->payload;
+	FILE *fp;
+	fp = fopen(payloadIn, "r");
+	
+	if (fp == NULL)
+	{
+		printf("Cannot open file %s\n", payloadIn);
+		die("");
+	}
+	
+	/* Set up the structure of the return packets */
+	packet_t pout;
+	header_t hout;
+	pout.header = hout;
+	char payloadOut[LEN];
+	hout.type = 'D';
+	int seq = SEQ_NUM;
+	
+	/* Set up the send rate */
+	long waitTime = (long)((1/RATE) * 1000);
+	struct timespec sleep_spec, rem_spec;
+	sleep_spec.tv_sec = 0;
+	sleep_spec.tv_nsec = waitTime;
+	time_t t;
+	struct tm curTime;
+	struct timeval ms;
+	
+	/* Build and send the packets */
+	char dispPayload[4];
+	int bytesRead = 0;
+	while(!feof(fp))
+	{
+		memset(&payloadOut[0], 0, sizeof(payloadOut));
+		memset(&dispPayload[0], 0, sizeof(dispPayload));
+		bytesRead = fread(payloadOut, sizeof(char), LEN, fp);
+		hout.len = bytesRead;
+		hout.seq = htonl(seq);
+		memcpy(pout.payload, payloadOut, sizeof(payloadOut));
+
+		pout.header = hout;
+		
+		/* Return file to requester in DATA packets */
+		if (sendto(sock_recv, &pout, sizeof(pout), 0, (struct sockaddr*)&sout, sendLen) < 0)
+		{
+			die("DATA sendto error");
+		}
+		
+		/* Print packet info */
+		t = time(NULL);
+		curTime = *localtime(&t);
+		gettimeofday(&ms, NULL);
+		memcpy(dispPayload, payloadOut, 4);
+
+		printf("Time: %d-%d-%d %d:%d:%d.%d\n",curTime.tm_year + 1900, curTime.tm_mon + 1, curTime.tm_mday, curTime.tm_hour, curTime.tm_min, curTime.tm_sec, (int)(ms.tv_usec * 1000));
+		printf("Requester: %s\nSequence #: %d\nPayload: %s\n\n",inet_ntoa(sout.sin_addr), seq, dispPayload);
+		
+		/* Increase the sequence number and wait to send the next packet */
+		seq += bytesRead;
+		nanosleep(&sleep_spec, &rem_spec);
+	}
+
+	/* Send the END packet */
+	hout.type = 'E';
+	hout.seq = 0;
+	hout.len = 0;
+	memset(&payloadOut[0], 0, sizeof(payloadOut));
+	pout.header = hout;
+
+	if (sendto(sock_recv, &pout, sizeof(pout), 0, (struct sockaddr*)&sout, sendLen) < 0)
+	{
+		die("END sendto error");
+	}
+
+	printf("Sent endpacket\n");
+	
+	close(sock_recv);
+	close(sock_send);
 	return(0);
 }

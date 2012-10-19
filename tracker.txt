@@ -1,1 +1,3 @@
-./files/iliad.txt 1 localhost 6000
+iliad.txt 1 localhost 6000
+iliad.txt 2 localhost 7000
+
