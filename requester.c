@@ -298,16 +298,14 @@ do_request(int s, request_t* r, FILE* fp)
 		//check if end packet
 		end = is_end_packet(&resp);
 
-		//if havent ended, append payload to file
-		if(end == 0)
-		{
-			write_file(&resp, fp);
-		}
 		//if already ended, log time
-		else
+		if(end == 1)
 		{
 			gettimeofday(&end_time, NULL);
 		}
+		
+		//append payload to file
+		write_file(&resp, fp);
 
 		//print packet data
 		print_packet_data(&local_time, (int)(curr_time.tv_usec * 1000), &resp, inet_ntoa(server.sin_addr));
