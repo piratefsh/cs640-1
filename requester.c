@@ -17,7 +17,7 @@
 #define MAX_TRACKER_LINES 10
 
 
-int debug = 0; 
+int debug = 1; 
 
 char* tracker_filename	= "tracker.txt";
 char* file_option;					//name of file being requested
@@ -193,11 +193,19 @@ do_request(request_t* r, FILE* fp)
 
 	//translate server hostname to peer IP
 	hp = gethostbyname(r->host);
-
+	
+	//build server address data structure
+	bzero((char*) &server, sizeof(server));
+	server.sin_family	= AF_INET;
+	server.sin_port 	= htons(r->port); 
+	bcopy(hp->h_addr, (char*) &server.sin_addr, hp->h_length);
+	printf("Server IP: %s\n", inet_ntoa(server.sin_addr));
+	
 	//get localhost name
 	char recv_name[MAX_LINE];
 	gethostname(recv_name, sizeof(recv_name));
 	rhp = gethostbyname(recv_name);
+	printf("Requester name is: %s\n", recv_name);
 
 	if(debug) printf("Request:\n filename: %s host: %s port: %d id: %d\n", r->filename, r-> host, r->port, r->id );
 	if(!hp)
@@ -205,17 +213,12 @@ do_request(request_t* r, FILE* fp)
 		die("Error: Unknown Host\n");
 	}
 
-	//build server address data structure
-	bzero((char*) &server, sizeof(server));
-	server.sin_family	= AF_INET;
-	server.sin_port 	= htons(r->port); 
-	bcopy(hp->h_addr, (char*) &server.sin_addr, hp->h_length);
-
+	
 	//build receiver address 
 	recv.sin_family = AF_INET;
 	recv.sin_port	= rport;
 	bcopy(rhp->h_addr, (char*) &recv.sin_addr, rhp->h_length);
-
+	printf("Receiver IP: %s\n", inet_ntoa(recv.sin_addr));
 
 	//active open
 	if((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
@@ -287,8 +290,7 @@ do_request(request_t* r, FILE* fp)
 		//if havent ended, append payload to file
 		if(end == 0)
 		{
-			int bytes_written = write_file(&resp, fp);
-			if(debug) printf("Wrote %d bytes\n", bytes_written);
+			write_file(&resp, fp);
 		}
 		//if already ended, log time
 		else

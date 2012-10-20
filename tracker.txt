@@ -1,3 +1,2 @@
-iliad.txt 1 mumble-22 6000
-iliad.txt 2 mumble-22 7000
+iliad.txt 1 mumble-19.cs.wisc.edu 6000
 

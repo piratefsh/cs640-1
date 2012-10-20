@@ -116,6 +116,13 @@ int main(int argc, char* argv[])
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = htonl(INADDR_ANY);
 	sin.sin_port = htons(PORT);
+	
+	/* Get server addr*/
+	struct hostent* hp;
+	char sender_name[512];
+	gethostname(sender_name, sizeof(sender_name));
+	hp = gethostbyname(sender_name);
+	bcopy(hp->h_addr, (char*) &sin.sin_addr, hp->h_length);
 
 	if ((sock_send = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
 	{
@@ -138,6 +145,9 @@ int main(int argc, char* argv[])
 		die("socket error");
 	}
 	
+	printf("Sender IP: %s\n", inet_ntoa(sin.sin_addr));
+	
+	
 	/* Initiate passive open */
 	printf("%s\n", "Waiting for data...");
 	/* Wait to receive data */
@@ -145,6 +155,8 @@ int main(int argc, char* argv[])
 	{
 		die("recvfrom error");
 	}
+	
+	printf("Receiver IP: %s\n", inet_ntoa(sout.sin_addr));
 	
 	packet_t* pin = (packet_t*)buf;
 	header_t hin = pin->header;
