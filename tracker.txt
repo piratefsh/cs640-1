@@ -1,2 +1,2 @@
-iliad.txt 1 mumble-19.cs.wisc.edu 6000
+iliad.txt 1 piratefsh-T420 6000
 

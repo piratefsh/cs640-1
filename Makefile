@@ -2,8 +2,9 @@ CC = gcc
 CFLAGS = -Wall -Werror
 
 all: requester sender
-	cp sender ./files/server1
-	cp sender ./files/server2
+	cp sender ./test_files/sender1/
+	cp sender ./test_files/sender2/
+	cp requester ./test_files/requester/
 
 requester: requester.o
 	$(CC)  requester.o -o requester

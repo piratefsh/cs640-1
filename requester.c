@@ -17,7 +17,7 @@
 #define MAX_TRACKER_LINES 10
 
 
-int debug = 1; 
+int debug = 0; 
 
 char* tracker_filename	= "tracker.txt";
 char* file_option;					//name of file being requested
@@ -40,15 +40,30 @@ parse_args(int argc, char * argv[])
 		return -1;
 
 	int i;
+
+	int got_port = 0;
+	int got_file = 0;
+
 	for(i = 0; i < argc; i++)
 	{
 		if(strcmp(argv[i], "-p") == 0)
+		{
 			rport = atoi(argv[i+1]);
+			if(rport < 1024 || rport > 65536)
+			{
+				die("Please enter a port number from 1024 to 65536");
+			}
+			got_port++;
+		}
 
-		else if(strcmp(argv[i], "-o") == 0)
+		else if(strcmp(argv[i], "-o") == 0){
 			file_option = strdup(argv[i + 1]);
+			got_file++;
+		}
 
 	}
+
+
 	return 0;
 }
 
@@ -98,8 +113,6 @@ read_packet(packet_t* packet)
 	header_t h 					= packet->header;
 	char payload[h.len];
 	memcpy(payload, packet->payload, h.len);
-
-	h.seq = ntohl(h.seq);
 
 	printf(" type: %c\n sequence: %d\n length: %d\n\n", h.type, h.seq, h.len);
 	
@@ -180,16 +193,14 @@ print_packet_data(struct tm* local_time, int ms, packet_t* resp, char* server_ip
 	payload_4B[4] = '\0';
 	printf("Time: %d-%d-%d %d:%d:%d.%d\n",local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, 
 		local_time->tm_hour, local_time->tm_min, local_time->tm_sec, ms);
-	printf("Sender: %s\nSequence #: %d\nPayload: %s\n\n", server_ip, (resp->header).len, payload_4B);
+	printf("Sender: %s\nSequence #: %d\nPayload: %s\n\n", server_ip, ntohl((resp->header).seq), payload_4B);
 }
 
 int 
-do_request(request_t* r, FILE* fp)
+do_request(int s, request_t* r, FILE* fp)
 {
 	struct hostent* hp;
-	struct hostent* rhp;
-	struct sockaddr_in server, recv;
-	int s;
+	struct sockaddr_in server;
 
 	//translate server hostname to peer IP
 	hp = gethostbyname(r->host);
@@ -199,35 +210,13 @@ do_request(request_t* r, FILE* fp)
 	server.sin_family	= AF_INET;
 	server.sin_port 	= htons(r->port); 
 	bcopy(hp->h_addr, (char*) &server.sin_addr, hp->h_length);
-	printf("Server IP: %s\n", inet_ntoa(server.sin_addr));
-	
-	//get localhost name
-	char recv_name[MAX_LINE];
-	gethostname(recv_name, sizeof(recv_name));
-	rhp = gethostbyname(recv_name);
-	printf("Requester name is: %s\n", recv_name);
+
+	printf("//-------------------START SENDING TO SENDER-------------------//\n");
 
 	if(debug) printf("Request:\n filename: %s host: %s port: %d id: %d\n", r->filename, r-> host, r->port, r->id );
 	if(!hp)
 	{
 		die("Error: Unknown Host\n");
-	}
-
-	
-	//build receiver address 
-	recv.sin_family = AF_INET;
-	recv.sin_port	= rport;
-	bcopy(rhp->h_addr, (char*) &recv.sin_addr, rhp->h_length);
-	printf("Receiver IP: %s\n", inet_ntoa(recv.sin_addr));
-
-	//active open
-	if((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-		die("Error: Failed to open socket\n");
-
-	//bind client to socket
-	if ((bind(s, (struct sockaddr *)&recv, sizeof(recv))) < 0)
-	{
-		die("Error: Failed to bind\n");
 	}
 
 	//assemble packet
@@ -308,13 +297,10 @@ do_request(request_t* r, FILE* fp)
 
 	time_t time_diff	= (end_time.tv_sec * 1000000 + end_time.tv_usec) - (start_time.tv_sec * 1000000 + start_time.tv_usec);
 
-	printf("--------------------------------------------\n");
-	printf("\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %lds\nAverage packets/s: %.4f\n\n", num_packets, 
+	printf("\nSUMMARY:\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %lds\nAverage packets/s: %.4f\n\n", num_packets, 
 		bytes_received, time_diff, num_packets / (float)(time_diff/1000000.0f));
-	printf("--------------------------------------------\n");
 	
-	//close socket
-	close(s);
+	printf("//--------------------DONE SENDING TO SENDER-------------------\n\n");
 
 	return 0;
 }
@@ -330,7 +316,7 @@ main(int argc, char* argv[])
 
 	if(debug) printf("Listening on port: %d, Requesting file: %s\n", rport, file_option);
 
-	//read tracker file
+	//----------read tracker and prepare file---------------------
 	request_t requests [MAX_TRACKER_LINES];
 	int num_requests = read_tracker(tracker_filename, requests);
 
@@ -338,23 +324,52 @@ main(int argc, char* argv[])
 
 	if(num_requests == 0)
 	{
-		die("Error: No entries in tracker file\n");
+		die("Error: No entries in tracker file for file option\n");
 	}
 
-	//ready file to stuff payload into
-	char* original_filename = strdup(requests[0].filename);
-	char* filename = strcat(original_filename, "_receiver");
-	FILE* fp = make_file(filename);
-	printf("Successfully created file %s\n", filename);
+	//prepare file to stuff payload into
+	FILE* fp = make_file(requests[0].filename);
+	printf("Successfully created file %s\n", requests[0].filename);
 
+
+	//--------------------prepare socket---------------------------
+	struct hostent* rhp;
+	struct sockaddr_in recv;
+	int s;
+
+	//get requester name
+	char recv_name[MAX_LINE];
+	gethostname(recv_name, sizeof(recv_name));
+	rhp = gethostbyname(recv_name);
+	printf("Requester name is: %s\n", recv_name);
+	
+	//build requester address 
+	recv.sin_family = AF_INET;
+	recv.sin_port	= rport;
+	bcopy(rhp->h_addr, (char*) &recv.sin_addr, rhp->h_length);
+	printf("Receiver IP: %s\n\n", inet_ntoa(recv.sin_addr));
+
+	//active open
+	if((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+		die("Error: Failed to open socket\n");
+
+	//bind client to socket
+	if ((bind(s, (struct sockaddr *)&recv, sizeof(recv))) < 0)
+	{
+		die("Error: Failed to bind\n");
+	}
+
+
+	//--------------------do requests in tracker------------------
 	int i;
 	for(i = 0; i < num_requests; i++)
 	{
-		do_request(&(requests[i]), fp);
+		do_request(s, &(requests[i]), fp);
 	}
-
 	
 	//done requesting from all servers
+	//close socket and file
+	close(s);
 	fclose(fp);
 	
 	exit(0);
