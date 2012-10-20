@@ -191,9 +191,13 @@ do_request(request_t* r, FILE* fp)
 	struct sockaddr_in server, recv;
 	int s;
 
-	//translate host to peer IP
+	//translate server hostname to peer IP
 	hp = gethostbyname(r->host);
-	rhp = gethostbyname("localhost");
+
+	//get localhost name
+	char recv_name[MAX_LINE];
+	gethostname(recv_name, sizeof(recv_name));
+	rhp = gethostbyname(recv_name);
 
 	if(debug) printf("Request:\n filename: %s host: %s port: %d id: %d\n", r->filename, r-> host, r->port, r->id );
 	if(!hp)
