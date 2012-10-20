@@ -17,7 +17,7 @@
 #define MAX_TRACKER_LINES 10
 
 
-int debug = 0; 
+int debug = 1; 
 
 char* tracker_filename	= "tracker.txt";
 char* file_option;					//name of file being requested
@@ -67,6 +67,21 @@ parse_args(int argc, char * argv[])
 	return 0;
 }
 
+//comparison function for sorting requests
+int
+compare_requests(const void* r, const void* s)
+{
+	int r_id = ((request_t*)r)->id;
+	int s_id = ((request_t*)s)->id;
+
+	if(r_id > s_id)
+		return 1;
+	else if (s_id > r_id)
+		return -1;
+
+	return 0;
+}
+
 //returns number of requests in tracker file
 int
 read_tracker(char* filename, request_t* requests)
@@ -103,6 +118,18 @@ read_tracker(char* filename, request_t* requests)
 		}
 	}
 
+	//sort requests by ID
+	qsort(requests, n, sizeof(request_t), compare_requests);
+
+	//print sorted requests
+
+	if(debug) printf("\nSorted requests in tracker file\n");
+	int i;
+	for(i = 0; i < n; i++)
+	{
+		request_t r = (requests[i]);
+		if(debug) printf("%s %d %s %d\n", r.filename, r.id, r.host, r.port);
+	}
 	return n;
 }
 
@@ -178,15 +205,10 @@ is_end_packet(packet_t* p)
 	return 0;
 }
 
+//print info about packet
 void
 print_packet_data(struct tm* local_time, int ms, packet_t* resp, char* server_ip)
 {
-		//print info about packet
-		// The time at which the packet was received in millisecond granularity,
-		// Sender's IP address (in decimal-dot notation),
-		// The packet sequence number,
-		// The payload's length (in bytes), and
-		// the first 4 bytes of the payload.
 
 	char payload_4B[5];
 	memcpy(payload_4B, resp->payload, 4);
@@ -300,7 +322,7 @@ do_request(int s, request_t* r, FILE* fp)
 	printf("\nSUMMARY:\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %lds\nAverage packets/s: %.4f\n\n", num_packets, 
 		bytes_received, time_diff, num_packets / (float)(time_diff/1000000.0f));
 	
-	printf("//--------------------DONE SENDING TO SENDER-------------------\n\n");
+	printf("//--------------------DONE SENDING TO SENDER-------------------//\n\n");
 
 	return 0;
 }
