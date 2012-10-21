@@ -1,3 +1,9 @@
+/*
+	requester.c
+	Authors: Tyler Burki (UWID: 9032705106) and Sher-Minn Chong (UWID: 9064830251)
+	Purpose: UDP file request requester
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -17,7 +23,7 @@
 #define MAX_TRACKER_LINES 10
 
 
-int debug = 1; 
+int debug = 0; 
 
 char* tracker_filename	= "tracker.txt";
 char* file_option;					//name of file being requested
@@ -215,7 +221,7 @@ print_packet_data(struct tm* local_time, int ms, packet_t* resp, char* server_ip
 	payload_4B[4] = '\0';
 	printf("Time: %d-%d-%d %d:%d:%d.%d\n",local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, 
 		local_time->tm_hour, local_time->tm_min, local_time->tm_sec, ms);
-	printf("Sender: %s\nSequence #: %d\nPayload: %s\n\n", server_ip, ntohl((resp->header).seq), payload_4B);
+	printf("Sender: %s\nSequence #: %d\nPayload length: %dB\nPayload: %s\n\n", server_ip, ntohl((resp->header).seq), (resp->header).len, payload_4B);
 }
 
 int 
@@ -233,7 +239,7 @@ do_request(int s, request_t* r, FILE* fp)
 	server.sin_port 	= htons(r->port); 
 	bcopy(hp->h_addr, (char*) &server.sin_addr, hp->h_length);
 
-	printf("//-------------------START SENDING TO SENDER-------------------//\n");
+	printf("//-------------------START REQUESTING FROM SENDER-------------------//\n");
 
 	if(debug) printf("Request:\n filename: %s host: %s port: %d id: %d\n", r->filename, r-> host, r->port, r->id );
 	if(!hp)
@@ -294,7 +300,6 @@ do_request(int s, request_t* r, FILE* fp)
 		num_packets++;
 		bytes_received += (resp.header).len;
 
-
 		//check if end packet
 		end = is_end_packet(&resp);
 
@@ -315,12 +320,18 @@ do_request(int s, request_t* r, FILE* fp)
 	//done receiving
 	if(debug) printf("End packet received.\n");
 
-	time_t time_diff	= (end_time.tv_sec * 1000000 + end_time.tv_usec) - (start_time.tv_sec * 1000000 + start_time.tv_usec);
+	if(bytes_received == 0){
+		printf("File was not found on sender");
+	}
 
-	printf("\nSUMMARY:\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %lds\nAverage packets/s: %.4f\n\n", num_packets, 
+	int ms_per_s = 1000000;
+
+	time_t time_diff	= (end_time.tv_sec * ms_per_s + end_time.tv_usec) - (start_time.tv_sec * ms_per_s + start_time.tv_usec);
+
+	printf("\nSUMMARY:\nTotal data packets: %d\nTotal data bytes: %d\nDuration: %ldmicroseconds\nAverage packets/s: %.4f\n\n", num_packets, 
 		bytes_received, time_diff, num_packets / (float)(time_diff/1000000.0f));
 	
-	printf("//--------------------DONE SENDING TO SENDER-------------------//\n\n");
+	printf("//--------------------DONE REQUESTING FROM SENDER-------------------//\n\n");
 
 	return 0;
 }
@@ -331,7 +342,7 @@ main(int argc, char* argv[])
 
 	if(parse_args(argc, argv) < 0)
 	{
-		die("Usage: -p <receiver port> -o <file option>\n");
+		die("Usage: -p <requester port> -o <file option>\n");
 	}
 
 	if(debug) printf("Listening on port: %d, Requesting file: %s\n", rport, file_option);

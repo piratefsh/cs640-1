@@ -84,9 +84,9 @@ int main(int argc, char* argv[])
 		{
 			RATE = arg;
 
-			if (RATE <= 0)
+			if (RATE < 1)
 			{
-				die("Please run again with a rate greater than 0.");
+				die("Please run again with an integer rate greater than or equal to 1.");
 			}
 		}
 		else if (strcmp(argType, "-q") == 0)
@@ -105,43 +105,32 @@ int main(int argc, char* argv[])
 		}
 	}
 	
-	struct sockaddr_in sin, sout;
+	struct sockaddr_in saddr, sout;
 	char buf[MAX_PACKET_SIZE];
 	int recvLen;
 	unsigned int sendLen = sizeof(sout);
-	int sock_send, sock_recv;
+	int s;
 	
 	/* Prepare sender socket */
-	bzero((char *)&sin, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = htonl(INADDR_ANY);
-	sin.sin_port = htons(PORT);
+	bzero((char *)&saddr, sizeof(saddr));
+	saddr.sin_family = AF_INET;
+	saddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	saddr.sin_port = htons(PORT);
 
-	if ((sock_send = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
+	if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
 	{
 		die("socket error");
 	}
 	
-	if ((bind(sock_send, (struct sockaddr *)&sin, sizeof(sin))) < 0)
+	if ((bind(s, (struct sockaddr *)&saddr, sizeof(saddr))) < 0)
 	{
 		die("bind error");
-	}
-	
-	/* Prepare receiver socket */
-	bzero((char *)&sout, sizeof(sout));
-	sout.sin_family = AF_INET;
-	sout.sin_addr.s_addr = htonl(INADDR_ANY);
-	sout.sin_port = htons(REQUESTER_PORT);
-
-	if ((sock_recv = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
-	{
-		die("socket error");
 	}
 	
 	/* Initiate passive open */
 	printf("%s\n", "Waiting for data...");
 	/* Wait to receive data */
-	if ((recvLen = recvfrom(sock_send, buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&sout, &sendLen)) < 0)
+	if ((recvLen = recvfrom(s, buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&sout, &sendLen)) < 0)
 	{
 		die("recvfrom error");
 	}
@@ -153,17 +142,6 @@ int main(int argc, char* argv[])
 	if (hin.type != 'R')
 	{
 		die("Invalid packet type");
-	}
-	
-	/* Open the requested file for reading */
-	char* payloadIn = pin->payload;
-	FILE *fp;
-	fp = fopen(payloadIn, "r");
-	
-	if (fp == NULL)
-	{
-		printf("Cannot open file %s\n", payloadIn);
-		die("");
 	}
 	
 	/* Set up the structure of the return packets */
@@ -178,14 +156,51 @@ int main(int argc, char* argv[])
 	double waitTime = (1000/(double)RATE);
 	struct timespec sleep_spec, rem_spec;
 	sleep_spec.tv_sec = 0;
+
+	/* Set up seconds parameter */
+	while (waitTime > 999)
+	{
+		sleep_spec.tv_sec++;
+		waitTime -= 1000;
+	}
+
 	sleep_spec.tv_nsec = (long)(waitTime * 1000000);
 	time_t t;
 	struct tm curTime;
 	struct timeval ms;
 	
-	/* Build and send the packets */
+	/* Set up the socket to send the file back to the requester */
+	bzero((char *)&saddr, sizeof(saddr));
+	saddr.sin_family = AF_INET;
+	saddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	saddr.sin_port = htons(REQUESTER_PORT);
 	char dispPayload[4];
 	int bytesRead = 0;
+
+	/* Open the requested file for reading */
+	char* payloadIn = pin->payload;
+	FILE *fp;
+	fp = fopen(payloadIn, "r");
+	
+	/* Send an empty end packet and quit if we cannot open the file */
+	if (fp == NULL)
+	{
+		hout.type = 'E';
+		hout.len = 0;
+		hout.seq = htonl(0);
+		pout.header = hout;
+		memset(&payloadOut[0], 0, sizeof(payloadOut));
+		memcpy(pout.payload, payloadOut, sizeof(payloadOut));
+
+		if (sendto(s, &pout, sizeof(pout), 0, (struct sockaddr*)&sout, sendLen) < 0)
+		{
+			die("sendto error");
+		}
+
+		die("");
+	}
+
+	/* Build and send the packets */
 	while(!feof(fp))
 	{
 		memset(&payloadOut[0], 0, sizeof(payloadOut));
@@ -195,12 +210,17 @@ int main(int argc, char* argv[])
 		hout.seq = htonl(seq);
 		memcpy(pout.payload, payloadOut, sizeof(payloadOut));
 
-		pout.header = hout;
-		
-		/* Return file to requester in DATA packets */
-		if (sendto(sock_recv, &pout, sizeof(pout), 0, (struct sockaddr*)&sout, sendLen) < 0)
+		/* Check if this packet should be an END packet */
+		if (bytesRead < LEN)
 		{
-			die("DATA sendto error");
+			hout.type = 'E';
+		}
+		
+		pout.header = hout;
+		/* Return file to requester in DATA packets */
+		if (sendto(s, &pout, sizeof(pout), 0, (struct sockaddr*)&sout, sendLen) < 0)
+		{
+			die("sendto error");
 		}
 		
 		/* Print packet info */
@@ -217,21 +237,6 @@ int main(int argc, char* argv[])
 		nanosleep(&sleep_spec, &rem_spec);
 	}
 
-	/* Send the END packet */
-	hout.type = 'E';
-	hout.seq = 0;
-	hout.len = 0;
-	memset(&payloadOut[0], 0, sizeof(payloadOut));
-	pout.header = hout;
-
-	if (sendto(sock_recv, &pout, sizeof(pout), 0, (struct sockaddr*)&sout, sendLen) < 0)
-	{
-		die("END sendto error");
-	}
-
-	printf("Sent end packet\n");
-	
-	close(sock_recv);
-	close(sock_send);
+	close(s);
 	return(0);
 }

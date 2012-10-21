@@ -1,3 +1,3 @@
-hello.txt 1 piratefsh-T420 5000
-split.txt 2 piratefsh-T420 5002
-split.txt 1 piratefsh-T420 5000
+hello.txt 1 mumble-30 5000
+split.txt 1 mumble-30 5000
+split.txt 2 mumble-30 5002
